@@ -1,0 +1,16 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "zhilan-reading-room",
+  "version": "0.2.0",
+  "description": "知与岚的私用共读室：共享书页、批注与最近阅读动态。",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "知岚共读室",
+        "shortDescription": "继续共读，读取已分享的批注和最近进度。",
+        "capabilities": ["Read", "Write"],
+        "websiteURL": "https://reading.ddnsto.com"
+      }
+    }
+  }
+}

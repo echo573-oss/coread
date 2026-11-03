@@ -47,7 +47,7 @@ export default function ReadingJournal({ stats, loading, dark, close }: any) {
                         <dt>完成日期</dt><dd>{book.finished_at || '尚未完成'}</dd></dl>
                 </details>) : <p className="muted">打开一本书，开始记录阅读。</p>}
                 <h3>共读批注</h3>
-                {stats.notes.length ? stats.notes.map((note: any) => <article key={note.id} className="journal-book"><small>{note.from_who} · {note.book_title || note.reading_date || '阅读记录'}</small><p>{note.content}</p></article>) : <p className="muted">暂无阅读批注。</p>}
+                {stats.notes.length ? stats.notes.map((note: any) => <article key={note.id} className="journal-book"><small>{note.display_name || note.from_who} · {note.book_title || note.reading_date || '阅读记录'}</small><p>{note.content}</p></article>) : <p className="muted">暂无阅读批注。</p>}
             </>}
         </section>
     </div>;

@@ -1,22 +1,18 @@
-export const BASE = window.location.origin + (window.location.pathname.match(/^\/coread/) ? '/coread' : '');
+export const BASE = window.location.origin;
+let csrfToken='';
+export function configureSession(token:string){csrfToken=token;}
+export async function ownerFetch(input:RequestInfo|URL,init:RequestInit={}){
+  const headers=new Headers(init.headers);
+  if(!['GET','HEAD','OPTIONS'].includes((init.method||'GET').toUpperCase()))headers.set('x-csrf-token',csrfToken);
+  const response=await fetch(input,{...init,headers,credentials:'same-origin',cache:'no-store'});
+  if(response.status===401)window.dispatchEvent(new Event('coread-session-expired'));
+  return response;
+}
 
-// Owner key for the locked reading room: open the page once with ?owner_key=... and this browser remembers it.
-export const ROOM_OWNER_KEY = (() => {
-  try {
-    const url = new URL(window.location.href);
-    const fromUrl = url.searchParams.get('owner_key');
-    if (fromUrl !== null) {
-      localStorage.setItem('coread-owner-key', fromUrl);
-      url.searchParams.delete('owner_key');
-      history.replaceState(null, '', url.toString());
-    }
-    return localStorage.getItem('coread-owner-key') || '';
-  } catch { return ''; }
-})();
 
 async function request(path: string, opts?: RequestInit) {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', 'x-owner-key': ROOM_OWNER_KEY },
+  const res = await ownerFetch(`${BASE}${path}`, {
+    headers: { 'Content-Type': 'application/json' },
     ...opts,
   });
   if (!res.ok) throw Object.assign(new Error(`${res.status} ${res.statusText}`), { status: res.status });
@@ -24,10 +20,13 @@ async function request(path: string, opts?: RequestInit) {
 }
 
 export const api = {
+  settings:()=>request('/v1/settings'),
+  saveSettings:(human:string,ai:string)=>request('/v1/settings',{method:'PATCH',body:JSON.stringify({human,ai})}),
+  shareThread:(id:number,visibility:'private'|'shared')=>request(`/v1/books/comment/${id}/visibility`,{method:'PATCH',body:JSON.stringify({visibility})}),
   readingState: () => request('/v1/reading-state'),
   backup: async (action: 'export' | 'preview' | 'restore', body: any) => {
-    const res = await fetch(`${BASE}/v1/backup/${action}`, { method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-owner-key': ROOM_OWNER_KEY, 'x-coread-backup': '1' }, body: JSON.stringify(body) });
+    const res = await ownerFetch(`${BASE}/v1/backup/${action}`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-coread-backup': '1' }, body: JSON.stringify(body) });
     const result = await res.json();
     if (!res.ok) throw new Error(result.error || '备份操作失败');
     return result;
@@ -57,7 +56,7 @@ export const api = {
   uploadBookFile: (file: Blob, title: string, format: string) =>
     request(`/v1/books?${new URLSearchParams({ title, format })}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/octet-stream', 'x-owner-key': ROOM_OWNER_KEY },
+      headers: { 'Content-Type': 'application/octet-stream' },
       body: file,
     }),
   touchBookOpen: (bookId: number) =>
@@ -80,7 +79,7 @@ export const api = {
   fetchBookToc: (bookId: number) =>
     request(`/v1/books/${bookId}/toc`),
   exportBook: async (bookId: number, format = 'epub') => {
-    const res = await fetch(`${BASE}/v1/books/${bookId}/export?format=${format}`, { headers: { 'x-owner-key': ROOM_OWNER_KEY } });
+    const res = await ownerFetch(`${BASE}/v1/books/${bookId}/export?format=${format}`, {});
     if (!res.ok) throw new Error('Export failed');
     return res.blob();
   },
@@ -91,31 +90,31 @@ export const api = {
   setRoomDoor: (locked: boolean) =>
     request('/v1/reading-room/door', { method: 'POST', body: JSON.stringify({ locked }) }),
   backupList: async () => {
-    const res = await fetch(`${BASE}/v1/coread-backup/list`, { method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-owner-key': ROOM_OWNER_KEY }, body: '{}' });
+    const res = await ownerFetch(`${BASE}/v1/coread-backup/list`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: '{}' });
     return res.json();
   },
   backupDelete: async (file: string) => {
-    await fetch(`${BASE}/v1/coread-backup/delete`, { method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-owner-key': ROOM_OWNER_KEY }, body: JSON.stringify({ file }) });
+    await ownerFetch(`${BASE}/v1/coread-backup/delete`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file }) });
   },
   backupExport: async (settings: Record<string, string>) => {
-    const res = await fetch(`${BASE}/v1/coread-backup/export`, { method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-owner-key': ROOM_OWNER_KEY }, body: JSON.stringify({ settings }) });
+    const res = await ownerFetch(`${BASE}/v1/coread-backup/export`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings }) });
     const d = await res.json();
     if (!res.ok) throw new Error(d.error || d.message || `导出失败 ${res.status}`);
     return d;
   },
   backupPreview: async (payload: any) => {
-    const res = await fetch(`${BASE}/v1/coread-backup/preview`, { method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-owner-key': ROOM_OWNER_KEY }, body: JSON.stringify(payload) });
+    const res = await ownerFetch(`${BASE}/v1/coread-backup/preview`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const d = await res.json();
     if (!res.ok) throw new Error(d.error || `预检失败 ${res.status}`);
     return d;
   },
   backupRestore: async (token: string) => {
-    const res = await fetch(`${BASE}/v1/coread-backup/restore`, { method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-owner-key': ROOM_OWNER_KEY }, body: JSON.stringify({ token, confirmed: true }) });
+    const res = await ownerFetch(`${BASE}/v1/coread-backup/restore`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, confirmed: true }) });
     const d = await res.json();
     if (!res.ok) throw new Error(d.error || `恢复失败 ${res.status}`);
     return d;

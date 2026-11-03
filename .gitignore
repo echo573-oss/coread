@@ -5,3 +5,11 @@ public/assets/*.map
 shen.db
 *.db-shm
 *.db-wal
+*.db.auth*
+.env
+.env.*
+!.env.example
+deploy/*.tar.gz
+deploy/*.zip
+playwright-report/
+.deploy-state/

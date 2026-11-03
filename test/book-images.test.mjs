@@ -40,7 +40,7 @@ function request(method, url, timeoutMs = 25000) {
       writeHead(status, headers = {}) { this.status = status; for (const [k, v] of Object.entries(headers)) this.headers[k.toLowerCase()] = v; },
       end(body = '') { clearTimeout(timer); this.body = Buffer.isBuffer(body) ? body : Buffer.from(String(body)); resolve(this); },
     };
-    Promise.resolve(handleRequest({ method, url, headers: {} }, res)).catch(reject);
+    Promise.resolve(handleRequest({ method, url, headers: {}, actor:{role:'human',scopes:['owner']} }, res)).catch(reject);
   });
 }
 
@@ -73,7 +73,7 @@ test('book-images：书架缩略图有就用、没有就算，越界和乱码路
       assert.equal(r.headers['content-type'], 'image/png');
       assert.ok(r.body.equals(png));
       assert.match(r.headers['content-security-policy'], /sandbox/);
-      assert.equal(r.headers['access-control-allow-origin'], '*');
+      assert.equal(r.headers['access-control-allow-origin'], undefined);
     }
   });
 

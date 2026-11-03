@@ -1,0 +1,9 @@
+.git
+node_modules
+data
+.env*
+*.db*
+test-results
+deploy/*.tar.gz
+deploy/*.zip
+.deploy-state

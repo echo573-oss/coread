@@ -66,7 +66,9 @@ test('running initDb again on a migrated or fresh database changes nothing', () 
   const { dir, dbPath } = makeCompositeKeyDb();
   try {
     initDb(dbPath);
-    const before = getDb().prepare('SELECT * FROM book_progress ORDER BY book_id').all();
+    const snapshotDb = getDb();
+    const before = snapshotDb.prepare('SELECT * FROM book_progress ORDER BY book_id').all();
+    snapshotDb.close();
     initDb(dbPath);
     const db = getDb();
     assert.deepEqual(db.prepare('SELECT * FROM book_progress ORDER BY book_id').all(), before);

@@ -1,0 +1,28 @@
+name: zhilan-coread
+services:
+  coread:
+    image: zhilan-coread:local
+    build: .
+    restart: unless-stopped
+    init: true
+    user: "${COREAD_UID:-1000}:${COREAD_GID:-1000}"
+    ports:
+      - "${COREAD_BIND_IP:-127.0.0.1}:${COREAD_HOST_PORT:-3010}:3000"
+    environment:
+      COREAD_PUBLIC_URL: https://reading.ddnsto.com
+      COREAD_PASSWORD_HASH: ${COREAD_PASSWORD_HASH:?Run the setup command first}
+      TZ: Asia/Shanghai
+    volumes:
+      - ./data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"

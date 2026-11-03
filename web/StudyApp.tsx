@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef, startTransition, useLayoutEffect, useMemo } from 'react';
-import { api, BASE, ROOM_OWNER_KEY } from './api';
+import { api, BASE, ownerFetch } from './api';
 import { useReadingClock, flushReading } from './useReadingClock';
 import ReadingJournal, { duration } from './ReadingJournal';
 // BackupControls removed — inline backup controls from home version
@@ -107,7 +107,7 @@ interface Book {
     finished_at?: string | null;
 }
 interface Paragraph { idx: number; content: string; }
-interface Comment { id: number; book_id: number; paragraph_idx: number; sel_end_para_idx: number | null; sel_start_idx: number | null; sel_end_idx: number | null; selected_text: string | null; from_who: string; content: string; created_at: string; reply_to: number | null; }
+interface Comment { id: number; book_id: number; paragraph_idx: number; sel_end_para_idx: number | null; sel_start_idx: number | null; sel_end_idx: number | null; selected_text: string | null; from_who: string; visibility?: 'private' | 'shared'; author_role?: 'human' | 'ai'; content: string; created_at: string; reply_to: number | null; }
 interface ReadingStats {
     today: string;
     today_seconds: number;
@@ -117,7 +117,7 @@ interface ReadingStats {
     readingDays: number;
     daily: { reading_date: string; seconds: number }[];
     books: { id: number; title: string; total_seconds: number; finished_at: string | null; last_read_at: string | null }[];
-    notes: { id: number; book_id: number | null; book_title: string | null; reading_date: string | null; from_who: string; content: string; created_at: string }[];
+    notes: { id: number; book_id: number | null; book_title: string | null; reading_date: string | null; from_who: string; visibility?: 'private' | 'shared'; author_role?: 'human' | 'ai'; content: string; created_at: string }[];
 }
 interface PageBreak { paraIndex: number; offset: number; }
 interface PageFragment extends Paragraph { sourceIdx: number; startOffset: number; endOffset: number; isPartialStart: boolean; isPartialEnd: boolean; }
@@ -471,8 +471,10 @@ const StudyApp: React.FC = () => {
     const batchFileRef = useRef<HTMLInputElement>(null);
     const [showBar, setShowBar] = useState(false);
     const [fabVisible, setFabVisible] = useState(false);
-    const [humanName, setHumanName] = useState(() => localStorage.getItem('coread-human-name') || 'human');
-    const [aiName, setAiName] = useState(() => localStorage.getItem('coread-ai-name') || 'AI');
+    const [shareDraft,setShareDraft]=useState(false);
+    useEffect(()=>{api.settings().then(d=>{setHumanName(d.human);setAiName(d.ai);localStorage.setItem('coread-human-name',d.human);localStorage.setItem('coread-ai-name',d.ai);}).catch(()=>{});},[]);
+    const [humanName, setHumanName] = useState(() => localStorage.getItem('coread-human-name') || '知');
+    const [aiName, setAiName] = useState(() => localStorage.getItem('coread-ai-name') || '岚');
     const [showSettings, setShowSettings] = useState(false);
     const [showMenu, setShowMenu] = useState(false);
     const [menuPhase, setMenuPhase] = useState<'closed' | 'anim' | 'open' | 'closing'>('closed');
@@ -515,8 +517,8 @@ const StudyApp: React.FC = () => {
     const closeReaderMenu = () => { setReaderMenuPhase('closing'); setTimeout(() => setReaderMenuPhase(p => p === 'closing' ? 'closed' : p), 180); };
     const displayName = (from: string) => {
         const lower = from.toLowerCase();
-        if (lower === 'human' || lower === humanName.toLowerCase()) return humanName;
-        if (lower === 'ai' || lower === aiName.toLowerCase()) return aiName;
+        if (lower === 'human' || lower === 'user' || lower === humanName.toLowerCase()) return humanName;
+        if (['ai','assistant','claude'].includes(lower) || lower === aiName.toLowerCase()) return aiName;
         return from;
     };
     const barTimer = useRef<any>(null);
@@ -737,10 +739,10 @@ const StudyApp: React.FC = () => {
         const check = async () => {
             try {
                 const lastSeen = parseInt(localStorage.getItem(`book-${activeBook.id}-last-seen`) || '0');
-                const r = await fetch(`${BASE}/v1/books/${activeBook.id}/new-replies?since=${lastSeen}`);
+                const r = await ownerFetch(`${BASE}/v1/books/${activeBook.id}/new-replies?since=${lastSeen}`);
                 if (r.ok) {
                     const d = await r.json();
-                    const aiOnly = (d.replies || []).filter((r: any) => r.from_who.toLowerCase() !== humanName.toLowerCase());
+                    const aiOnly = (d.replies || []).filter((r: any) => r.author_role === 'ai');
                     setNewReplies(aiOnly.length ? aiOnly : []);
                 }
             } catch {}
@@ -923,11 +925,9 @@ const StudyApp: React.FC = () => {
         setBackupBusy(true);
         try {
             const settings = {
-                'coread-font-size': localStorage.getItem('coread-font-size') || '',
-                'coread-brightness': localStorage.getItem('coread-brightness') || '',
-                'coread-night-mode': localStorage.getItem('coread-night-mode') || '',
-                'coread-reading-clock': localStorage.getItem('coread-reading-clock') || '',
-                'coread-tap-turn': localStorage.getItem('coread-tap-turn') || '',
+                'coread-font-size': String(Math.max(12,Math.min(22,Number(localStorage.getItem('coread-font-size'))||16))),
+                'coread-brightness': String(Math.max(20,Math.min(100,Number(localStorage.getItem('coread-brightness'))||100))),
+                'coread-night-mode': localStorage.getItem('coread-night-mode') === 'true' ? 'true' : 'false',
             };
             const d = await api.backupExport(settings);
             toast(`已存到服务器（${(d.bytes / 1048576).toFixed(0)}MB），在「恢复备份」里能看到`);
@@ -976,7 +976,7 @@ const StudyApp: React.FC = () => {
     const loadReadingStats = (reader: 'tongbao' | 'ai') => {
         setStatsReader(reader);
         setReadingStatsLoading(true);
-        fetch(`${BASE}/v1/reading-stats?today=${localDay(Date.now())}&reader=${reader}`, { headers: { 'x-owner-key': ROOM_OWNER_KEY } })
+        ownerFetch(`${BASE}/v1/reading-stats?today=${localDay(Date.now())}&reader=${reader}`)
             .then(r => r.json()).then(d => { setReadingStats(d); setReadingStatsLoading(false); })
             .catch(() => setReadingStatsLoading(false));
     };
@@ -1745,7 +1745,7 @@ const StudyApp: React.FC = () => {
         commentSubmittingRef.current = true;
         try {
             const result = await api.addBookComment(activeBook.id, {
-                paragraph_idx: commentingIdx, content: commentText.trim(), from_who: humanName,
+                paragraph_idx: commentingIdx, content: commentText.trim(), visibility: shareDraft ? 'shared' : 'private',
                 selected_text: selectedText || undefined,
                 sel_start_idx: selRange ? selRange.start : undefined,
                 sel_end_idx: selRange ? selRange.end : undefined,
@@ -1756,13 +1756,13 @@ const StudyApp: React.FC = () => {
                 id: result?.id ?? Date.now(), book_id: activeBook.id, paragraph_idx: commentingIdx,
                 sel_start_idx: selRange?.start ?? null, sel_end_idx: selRange?.end ?? null,
                 sel_end_para_idx: selRange && selRange.endPara !== selRange.startPara ? selRange.endPara : null,
-                selected_text: selectedText || null, from_who: humanName,
+                selected_text: selectedText || null, from_who: 'human', author_role: 'human', visibility: result.visibility,
                 content: commentText.trim(), created_at: new Date().toISOString(), reply_to: replyingTo?.id ?? null,
             };
             const pageToRestore = replyPageRef.current ?? page;
             replyPageRef.current = null;
             suppressPageJumpRef.current = true;
-            setCommentText(''); setSelectedText(''); setSelRange(null); setReplyingTo(null);
+            setCommentText(''); setShareDraft(false); setSelectedText(''); setSelRange(null); setReplyingTo(null);
             setActiveComments([]); setCommentingIdx(null);
             setComments(prev => [...prev, newComment]);
             const bookId = activeBook.id;
@@ -1771,6 +1771,19 @@ const StudyApp: React.FC = () => {
             setTimeout(() => { suppressPageJumpRef.current = false; }, 500);
         } catch (e: any) { toast(`批注失败: ${e.message}`); }
         finally { commentSubmittingRef.current = false; }
+    };
+
+    const handleVisibility = async (cmt:Comment) => {
+        const visibility:'private'|'shared'=cmt.visibility==='shared'?'private':'shared';
+        if(visibility==='shared' && !window.confirm('将这条批注和全部回复分享给 '+aiName+'？'))return;
+        try{
+            await api.shareThread(cmt.id,visibility);
+            const ids=new Set([cmt.id]);let changed=true;
+            while(changed){changed=false;for(const row of allComments)if(row.reply_to && ids.has(row.reply_to) && !ids.has(row.id)){ids.add(row.id);changed=true;}}
+            const update=(rows:Comment[])=>rows.map(c=>ids.has(c.id)?{...c,visibility}:c);
+            setAllComments(prev=>{const next=update(prev);cacheComments(cmt.book_id,next);return next;});setComments(update);setActiveComments(update);
+            toast(visibility==='shared'?'已分享':'后续仅自己可见；之前已分享的内容无法从对方上下文撤回');
+        }catch{toast('修改可见性失败');}
     };
 
     const handleDeleteComment = async (cmt: Comment) => {
@@ -1880,7 +1893,7 @@ const StudyApp: React.FC = () => {
             } else {
                 await api.createBook({ title: uploadTitle.trim(), content: uploadText });
             }
-            setShowUpload(false); setUploadTitle(''); setUploadText(''); setUploadFile(null); setUploadFileName('');
+            setShowUpload(false); setPanelDetail(null); setUploadTitle(''); setUploadText(''); setUploadFile(null); setUploadFileName('');
             toast('上传成功');
             loadBooks();
         } catch (e: any) { toast(`上传失败: ${e.message}`); }
@@ -2398,6 +2411,7 @@ const StudyApp: React.FC = () => {
                             {selectedText.length > 160 ? selectedText.slice(0, 160) + '...' : selectedText}
                         </div>
                     )}
+                    {!replyingTo && <label style={{display:'flex',gap:8,alignItems:'center',fontSize:12,marginBottom:8,color:readerNightMode?'#bbb':'#666'}}><input type="checkbox" checked={shareDraft} onChange={e=>setShareDraft(e.target.checked)}/>分享给 {aiName}（不勾选则仅自己可见）</label>}
                     <textarea value={commentText} onChange={e => setCommentText(e.target.value)} placeholder="写下你的想法..."
                         style={{ width: '100%', minHeight: 72, border: 'none', background: 'transparent', fontSize: 14, color: readerNightMode ? '#ddd' : '#444', resize: 'none', outline: 'none', lineHeight: 1.6 }} autoFocus />
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
@@ -2442,6 +2456,7 @@ const StudyApp: React.FC = () => {
                                     )}
                                     <div style={{ fontSize: 14, color: readerNightMode ? '#ddd' : 'hsl(40,8%,22%)', lineHeight: 1.7, marginBottom: 8 }}>{ac.content}</div>
                                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                                        {!ac.reply_to && <button onClick={()=>handleVisibility(ac)} style={{background:'none',border:'1px solid #aaa',borderRadius:10,padding:'4px 10px',fontSize:11,color:inkColor,cursor:'pointer'}}>{ac.visibility==='shared'?'已分享 · 撤回分享':'私密 · 分享给 '+aiName}</button>}
                                         <button onClick={() => { replyPageRef.current = page; setReplyingTo(ac); setCommentingIdx(ac.paragraph_idx); setCommentText(''); }} style={{ background: 'none', border: `1px solid ${dividerColor}`, borderRadius: 10, padding: '4px 14px', fontSize: 11, color: inkColor, cursor: 'pointer' }}>回复</button>
                                         {!isShen && (
                                             <button onClick={() => handleDeleteComment(ac)} style={{ background: 'none', border: `1px solid ${readerNightMode ? 'rgba(255,100,100,.2)' : 'rgba(200,100,100,.2)'}`, borderRadius: 10, padding: '4px 14px', fontSize: 11, color: readerNightMode ? '#c88' : '#d88', cursor: 'pointer' }}>删除</button>
@@ -3191,7 +3206,9 @@ const StudyApp: React.FC = () => {
                         <label style={{ fontSize: 12, color: INK2, display: 'block', marginBottom: 6 }}>AI的名字</label>
                         <input value={aiName} onChange={e => { setAiName(e.target.value); localStorage.setItem('coread-ai-name', e.target.value); }}
                             style={{ ...vdInput, margin: '0 0 12px' }} />
-                        <button onClick={() => setShowSettings(false)} style={{ ...vdCta, margin: '8px 0 0' }}>完成</button>
+                        <button onClick={() => window.dispatchEvent(new Event('coread-logout'))} style={{ ...vdCta, margin: '8px 0', background:'#777' }}>退出登录</button>
+                        <button onClick={async()=>{if(window.confirm('断开全部 AI 连接？重新连接时需要再次授权。')){const res=await ownerFetch('/auth/revoke-all',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});toast(res.ok?'已断开 AI 授权':'操作失败');}}} style={{ ...vdCta, margin:'8px 0',background:'#777' }}>断开 AI 授权</button>
+                        <button onClick={async () => {try{await api.saveSettings(humanName,aiName);setShowSettings(false);}catch{toast('名字保存失败，请稍后重试');}}} style={{ ...vdCta, margin: '8px 0 0' }}>保存名字</button>
                     </div>
                 </>
             )}
@@ -3211,7 +3228,7 @@ const StudyApp: React.FC = () => {
                 onConfirm: async () => {
                     setConfirmBatchDelete(false);
                     for (const id of selectedBooks) {
-                        try { await fetch(`${BASE}/v1/books/${id}`, { method: 'DELETE' }); } catch {}
+                        try { await ownerFetch(`${BASE}/v1/books/${id}`, { method: 'DELETE' }); } catch {}
                     }
                     setSelectedBooks(new Set()); setEditMode(false); setManageAction(null); loadBooks();
                     toast(`已删除 ${selectedBooks.size} 本`);

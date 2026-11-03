@@ -1,0 +1,19 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "reading-room": {
+      "type": "streamable-http",
+      "url": "https://reading.ddnsto.com/mcp",
+      "extensions": {
+        "com.openai": {
+          "auth": {
+            "type": "oauth",
+            "client": { "mode": "dcr" },
+            "resource": "https://reading.ddnsto.com/mcp",
+            "baseScopes": ["reading:read", "reading:write"]
+          }
+        }
+      }
+    }
+  }
+}

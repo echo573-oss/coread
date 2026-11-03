@@ -64,7 +64,7 @@ test('comment route keeps explicit selections and fixes quote-only ones', async 
   const bookId = setup(t);
   const post = async body => {
     const req = Readable.from([JSON.stringify(body)]);
-    Object.assign(req, { method: 'POST', url: `/v1/books/${bookId}/comment`, headers: {} });
+    Object.assign(req, { method: 'POST', url: `/v1/books/${bookId}/comment`, headers: {}, actor:{role:'human',scopes:['owner']} });
     const res = { status: null, body: '', setHeader() {}, writeHead(s) { this.status = s; }, end(b = '') { this.body = String(b); } };
     await handleRequest(req, res);
     return { status: res.status, body: JSON.parse(res.body) };

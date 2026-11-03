@@ -12,7 +12,7 @@ function makeRequest(url, body) {
   const req = Readable.from([JSON.stringify(body)]);
   req.method = 'POST';
   req.url = url;
-  req.headers = {};
+  req.headers = {}; req.actor={role:'human',scopes:['owner']};
   return req;
 }
 
